@@ -11,10 +11,10 @@ import torch
 from transformers import DetrImageProcessor, DetrForObjectDetection
 import gradio as gr
 
-# 1. Initialize FastAPI app
-app = FastAPI(title="VisionTracker API")
+# 1. Initialize FastAPI
+fastapi_app = FastAPI(title="VisionTracker API")
 
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -64,15 +64,11 @@ class DetectionResponse(BaseModel):
     annotated_image_base64: str
     inference_time_ms: float
 
-@app.get("/api/health")
+@fastapi_app.get("/api/health")
 def health_check():
-    return {
-        "status": "online",
-        "device": device,
-        "model": MODEL_NAME
-    }
+    return {"status": "online", "device": device, "model": MODEL_NAME}
 
-@app.post("/api/detect", response_model=DetectionResponse)
+@fastapi_app.post("/api/detect", response_model=DetectionResponse)
 async def detect_objects(
     file: UploadFile = File(...),
     threshold: float = Query(0.7, ge=0.0, le=1.0)
@@ -177,14 +173,39 @@ async def detect_objects(
         inference_time_ms=round((time.time() - start_time) * 1000, 2)
     )
 
-# 2. Minimal Gradio UI wrapped around FastAPI app (to satisfy Gradio Space requirements)
+# 2. Gradio Interactive Interface (built-in testing & satisfying Gradio runner)
+def gradio_detect(input_img, conf):
+    if input_img is None:
+        return None, "No image uploaded"
+    # Convert numpy to PIL
+    pil_img = Image.fromarray(input_img)
+    w, h = pil_img.size
+    inputs = processor(images=pil_img, return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    results = processor.post_process_object_detection(outputs, target_sizes=torch.tensor([[h, w]]).to(device), threshold=conf)[0]
+    
+    annotated = pil_img.copy()
+    draw = ImageDraw.Draw(annotated)
+    found = []
+    for score, label_idx, box in zip(results["scores"].tolist(), results["labels"].tolist(), results["boxes"].tolist()):
+        xmin, ymin, xmax, ymax = [round(float(b), 2) for b in box]
+        lbl = model.config.id2label.get(label_idx, f"class_{label_idx}")
+        draw.rectangle([xmin, ymin, xmax, ymax], outline="#FFCA54", width=3)
+        draw.text((xmin + 4, max(0, ymin - 16)), f"{lbl} {int(score*100)}%", fill="#FFCA54")
+        found.append(f"{lbl} ({int(score*100)}%)")
+    return annotated, f"Found {len(found)} objects: {', '.join(found)}"
+
 with gr.Blocks(title="VisionTracker AI API") as demo:
-    gr.Markdown("# 🎯 VisionTracker FastAPI Backend is Live!")
-    gr.Markdown("This Hugging Face Space hosts the FastAPI backend for your Vercel frontend.")
+    gr.Markdown("# 🎯 VisionTracker API Endpoint")
+    gr.Markdown("FastAPI endpoint `/api/detect` is actively listening for requests from your Vercel frontend.")
+    with gr.Row():
+        img_in = gr.Image(label="Test Input Image")
+        img_out = gr.Image(label="Detection Output")
+    slider = gr.Slider(0.1, 0.95, value=0.7, label="Confidence Threshold")
+    txt_out = gr.Textbox(label="Detection Summary")
+    btn = gr.Button("Run Test")
+    btn.click(gradio_detect, inputs=[img_in, slider], outputs=[img_out, txt_out])
 
-# Mount FastAPI app onto Gradio
-app = gr.mount_gradio_app(app, demo, path="/")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7860)
+# Mount Gradio onto FastAPI root
+app = gr.mount_gradio_app(fastapi_app, demo, path="/")
