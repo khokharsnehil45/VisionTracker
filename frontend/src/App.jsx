@@ -187,7 +187,7 @@ export default function App() {
     setSelectedDetection(null);
 
     const startTime = performance.now();
-    const hfSpaceId = import.meta.env.VITE_HF_SPACE_ID || 'khokharsnehil45/vision-tracker-api';
+    const hfSpaceId = import.meta.env.VITE_HF_SPACE_ID || 'khokharsnehil45/vision-tracker';
     const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
     try {
