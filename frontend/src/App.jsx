@@ -190,7 +190,9 @@ export default function App() {
     formData.append('file', selectedFile);
 
     try {
-      const endpoint = `/api/detect?threshold=${threshold}&render_boxes=true`;
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
+      const endpoint = `${apiBase}/api/detect?threshold=${threshold}&render_boxes=true`;
+      
       let response;
       try {
         response = await fetch(endpoint, {
@@ -198,7 +200,8 @@ export default function App() {
           body: formData,
         });
       } catch (networkErr) {
-        response = await fetch(`http://localhost:8080${endpoint}`, {
+        // Fallback for local testing without proxy
+        response = await fetch(`http://localhost:8080/api/detect?threshold=${threshold}&render_boxes=true`, {
           method: 'POST',
           body: formData,
         });
