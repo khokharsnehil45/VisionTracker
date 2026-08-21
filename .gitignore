@@ -1,0 +1,20 @@
+# Python
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.pt
+*.bin
+*.safetensors
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# System / OS
+.DS_Store
+*.log
+scratch/

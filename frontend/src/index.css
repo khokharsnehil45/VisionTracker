@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg: #0A0D14;
+  --bg-2: #0D111A;
+  --surface: #121722;
+  --surface-2: #182030;
+  --border: #232B3A;
+  --border-strong: #303B52;
+  --ink: #E9EDF5;
+  --muted: #A7B0C0;
+  --faint: #717A8C;
+  --accent: #FFCA54;
+  --accent-2: #FFD87A;
+  --accent-ink: #17150E;
+  --accent-soft: rgba(255, 202, 84, 0.10);
+  --accent-line: rgba(255, 202, 84, 0.38);
+  --accent-fill: #FFD165;
+  --accent-fill-hover: #FFE08F;
+  --green: #4ADE80;
+  --dot: rgba(233, 237, 245, 0.045);
+  --halo: rgba(255, 202, 84, 0.10);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow-soft: 0 16px 40px rgba(0, 0, 0, 0.38);
+  --glow: 0 10px 34px rgba(255, 202, 84, 0.16);
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F6F8FA;
+  --bg-2: #EFF2F6;
+  --surface: #FFFFFF;
+  --surface-2: #F1F4F8;
+  --border: #E3E8F0;
+  --border-strong: #CDD6E3;
+  --ink: #131722;
+  --muted: #4A5464;
+  --faint: #7D8798;
+  --accent: #E5A00D;
+  --accent-2: #FFC94F;
+  --accent-ink: #17150E;
+  --accent-soft: rgba(229, 160, 13, 0.12);
+  --accent-line: rgba(212, 148, 16, 0.45);
+  --accent-fill: #FFC94F;
+  --accent-fill-hover: #FFDC8A;
+  --green: #16A34A;
+  --dot: rgba(19, 23, 34, 0.05);
+  --halo: rgba(229, 160, 13, 0.10);
+  --shadow-soft: 0 14px 36px rgba(19, 23, 34, 0.10);
+  --glow: 0 10px 30px rgba(229, 160, 13, 0.18);
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(900px 480px at 50% -160px, var(--halo), transparent 65%),
+    radial-gradient(var(--dot) 1px, transparent 1px);
+  background-size: auto, 26px 26px;
+  color: var(--ink);
+  min-height: 100vh;
+  margin: 0;
+  line-height: 1.6;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Custom modern scrollbar matching the theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
+}
