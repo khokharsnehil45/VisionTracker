@@ -186,33 +186,103 @@ export default function App() {
     setError(null);
     setSelectedDetection(null);
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
+    const startTime = performance.now();
+    const hfSpaceId = import.meta.env.VITE_HF_SPACE_ID || 'khokharsnehil45/vision-tracker-api';
+    const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
     try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || '';
-      const endpoint = `${apiBase}/api/detect?threshold=${threshold}&render_boxes=true`;
-      
-      let response;
-      try {
-        response = await fetch(endpoint, {
-          method: 'POST',
-          body: formData,
-        });
-      } catch (networkErr) {
-        // Fallback for local testing without proxy
-        response = await fetch(`http://localhost:8080/api/detect?threshold=${threshold}&render_boxes=true`, {
-          method: 'POST',
-          body: formData,
-        });
+      let data = null;
+
+      // 1. Try connecting to Hugging Face ZeroGPU Space via Gradio Client
+      if (hfSpaceId && !apiBase.includes('localhost')) {
+        try {
+          const { Client } = await import('@gradio/client');
+          const client = await Client.connect(hfSpaceId);
+          const resultData = await client.predict('/detect', {
+            image: selectedFile,
+            threshold: threshold,
+          });
+
+          if (resultData && resultData.data) {
+            const [annotatedImgData, summaryText, rawJson] = resultData.data;
+            const annotatedUrl = typeof annotatedImgData === 'object' && annotatedImgData?.url 
+              ? annotatedImgData.url 
+              : annotatedImgData;
+
+            // Load original image to get dimensions
+            const img = new Image();
+            img.src = previewUrl;
+            await new Promise(res => { img.onload = res; img.onerror = res; });
+            const imgWidth = img.naturalWidth || 800;
+            const imgHeight = img.naturalHeight || 600;
+
+            const detections = (rawJson?.detections || []).map((d, idx) => {
+              const [xmin, ymin, xmax, ymax] = d.box || [0,0,0,0];
+              const colors = ["#FFCA54", "#4ADE80", "#60A5FA", "#F87171", "#A78BFA", "#FB923C", "#2DD4BF"];
+              return {
+                label: d.label,
+                confidence: d.confidence,
+                color: colors[idx % colors.length],
+                box: {
+                  xmin,
+                  ymin,
+                  xmax,
+                  ymax,
+                  width: roundNum(xmax - xmin),
+                  height: roundNum(ymax - ymin),
+                  rel_xmin: imgWidth > 0 ? Number((xmin / imgWidth).toFixed(4)) : 0,
+                  rel_ymin: imgHeight > 0 ? Number((ymin / imgHeight).toFixed(4)) : 0,
+                  rel_xmax: imgWidth > 0 ? Number((xmax / imgWidth).toFixed(4)) : 0,
+                  rel_ymax: imgHeight > 0 ? Number((ymax / imgHeight).toFixed(4)) : 0,
+                }
+              };
+            });
+
+            data = {
+              task: "detection",
+              model_used: "facebook/detr-resnet-50 (ZeroGPU)",
+              image_width: imgWidth,
+              image_height: imgHeight,
+              detected_count: detections.length,
+              detections: detections,
+              annotated_image_base64: annotatedUrl,
+              inference_time_ms: Math.round(performance.now() - startTime)
+            };
+          }
+        } catch (gradioErr) {
+          console.warn("Gradio Space direct connect failed, trying HTTP endpoint...", gradioErr);
+        }
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Detection failed' }));
-        throw new Error(errorData.detail || `Server error ${response.status}`);
+      // 2. Fallback to standard FastAPI endpoint if Gradio client was not used or failed
+      if (!data) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const endpoint = apiBase 
+          ? `${apiBase}/api/detect?threshold=${threshold}&render_boxes=true`
+          : `/api/detect?threshold=${threshold}&render_boxes=true`;
+        
+        let response;
+        try {
+          response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData,
+          });
+        } catch (networkErr) {
+          response = await fetch(`http://localhost:8080/api/detect?threshold=${threshold}&render_boxes=true`, {
+            method: 'POST',
+            body: formData,
+          });
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: 'Detection failed' }));
+          throw new Error(errorData.detail || `Server error ${response.status}`);
+        }
+
+        data = await response.json();
       }
 
-      const data = await response.json();
       setResult(data);
       setFilterClass('ALL');
       saveToHistory(data, previewUrl, selectedFile.name);
@@ -222,6 +292,8 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  const roundNum = (n) => Number(Number(n).toFixed(2));
 
   const filteredDetections = result
     ? result.detections.filter(d => filterClass === 'ALL' || d.label === filterClass)
