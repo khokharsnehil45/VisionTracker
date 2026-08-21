@@ -399,21 +399,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Floating Left Opener (when closed) */}
-      {!historyOpen && (
-        <button
-          onClick={() => setHistoryOpen(true)}
-          className="fixed left-4 top-20 z-40 flex items-center gap-2 px-3 py-2 rounded-full bg-[var(--surface)]/95 border border-[var(--border-strong)] hover:border-[var(--accent-line)] hover:bg-[var(--accent-soft)] text-[var(--ink)] shadow-[var(--shadow-soft)] backdrop-blur-md transition-all group cursor-pointer"
-          title="Open history panel"
-        >
-          <History className="w-4 h-4 text-[var(--accent)] group-hover:rotate-12 transition-transform" />
-          <span className="font-mono text-xs font-semibold">History</span>
-          {historyItems.length > 0 && (
-            <span className="w-2 h-2 rounded-full bg-[var(--accent)] inline-block animate-pulse" />
-          )}
-        </button>
-      )}
-
       {/* Main Container */}
       <main className="max-w-[1160px] mx-auto px-6 py-8 w-full flex-1 flex flex-col gap-8">
         {/* Header Hero Title */}
