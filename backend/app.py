@@ -10,11 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 import torch
 from transformers import DetrImageProcessor, DetrForObjectDetection
 import gradio as gr
-try:
-    import spaces
-    HAS_SPACES = True
-except ImportError:
-    HAS_SPACES = False
+import spaces
 
 # 1. Initialize FastAPI
 fastapi_app = FastAPI(title="VisionTracker API")
@@ -27,14 +23,16 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_NAME = "facebook/detr-resnet-50"
+processor = None
+model = None
 
-print(f"Loading DETR model '{MODEL_NAME}' on '{device}'...")
-processor = DetrImageProcessor.from_pretrained(MODEL_NAME)
-model = DetrForObjectDetection.from_pretrained(MODEL_NAME).to(device)
-model.eval()
-print(f"DETR model ready on {device}!")
+def get_model():
+    global processor, model
+    if processor is None or model is None:
+        processor = DetrImageProcessor.from_pretrained(MODEL_NAME)
+        model = DetrForObjectDetection.from_pretrained(MODEL_NAME)
+    return processor, model
 
 COLORS = [
     "#FFCA54", "#4ADE80", "#60A5FA", "#F87171", "#A78BFA",
@@ -69,25 +67,25 @@ class DetectionResponse(BaseModel):
     annotated_image_base64: str
     inference_time_ms: float
 
-# Internal inference function
-def run_model_inference(image, threshold):
+# Native top-level @spaces.GPU decorated function
+@spaces.GPU
+def predict_detr(image: Image.Image, threshold: float):
+    proc, mdl = get_model()
+    mdl = mdl.to("cuda")
     img_width, img_height = image.size
-    inputs = processor(images=image, return_tensors="pt").to(device)
+    inputs = proc(images=image, return_tensors="pt").to("cuda")
     with torch.no_grad():
-        outputs = model(**inputs)
+        outputs = mdl(**inputs)
 
-    target_sizes = torch.tensor([[img_height, img_width]]).to(device)
-    return processor.post_process_object_detection(
+    target_sizes = torch.tensor([[img_height, img_width]]).to("cuda")
+    results = proc.post_process_object_detection(
         outputs, target_sizes=target_sizes, threshold=threshold
     )[0]
-
-# Decorate with @spaces.GPU if running inside Hugging Face ZeroGPU Space
-if HAS_SPACES:
-    run_model_inference = spaces.GPU(run_model_inference)
+    return results
 
 @fastapi_app.get("/api/health")
 def health_check():
-    return {"status": "online", "device": device, "model": MODEL_NAME}
+    return {"status": "online", "model": MODEL_NAME}
 
 @fastapi_app.post("/api/detect", response_model=DetectionResponse)
 async def detect_objects(
@@ -104,7 +102,7 @@ async def detect_objects(
     img_width, img_height = image.size
 
     try:
-        results = run_model_inference(image, threshold)
+        results = predict_detr(image, threshold)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
@@ -120,6 +118,7 @@ async def detect_objects(
     scores = results["scores"].tolist()
     labels = results["labels"].tolist()
     boxes = results["boxes"].tolist()
+    _, mdl = get_model()
 
     for idx, (score, label_idx, box) in enumerate(zip(scores, labels, boxes)):
         xmin, ymin, xmax, ymax = [round(float(b), 2) for b in box]
@@ -130,7 +129,7 @@ async def detect_objects(
 
         box_w = round(xmax - xmin, 2)
         box_h = round(ymax - ymin, 2)
-        label_name = model.config.id2label.get(label_idx, f"class_{label_idx}")
+        label_name = mdl.config.id2label.get(label_idx, f"class_{label_idx}")
         color = COLORS[idx % len(COLORS)]
 
         rel_xmin = round(xmin / img_width, 4) if img_width > 0 else 0.0
@@ -188,18 +187,20 @@ async def detect_objects(
     )
 
 # 2. Gradio Interactive Interface
+@spaces.GPU
 def gradio_detect(input_img, conf):
     if input_img is None:
         return None, "No image uploaded"
     pil_img = Image.fromarray(input_img)
-    results = run_model_inference(pil_img, conf)
+    results = predict_detr(pil_img, conf)
+    _, mdl = get_model()
     
     annotated = pil_img.copy()
     draw = ImageDraw.Draw(annotated)
     found = []
     for score, label_idx, box in zip(results["scores"].tolist(), results["labels"].tolist(), results["boxes"].tolist()):
         xmin, ymin, xmax, ymax = [round(float(b), 2) for b in box]
-        lbl = model.config.id2label.get(label_idx, f"class_{label_idx}")
+        lbl = mdl.config.id2label.get(label_idx, f"class_{label_idx}")
         draw.rectangle([xmin, ymin, xmax, ymax], outline="#FFCA54", width=3)
         draw.text((xmin + 4, max(0, ymin - 16)), f"{lbl} {int(score*100)}%", fill="#FFCA54")
         found.append(f"{lbl} ({int(score*100)}%)")
@@ -207,7 +208,7 @@ def gradio_detect(input_img, conf):
 
 with gr.Blocks(title="VisionTracker AI API") as demo:
     gr.Markdown("# 🎯 VisionTracker API Endpoint")
-    gr.Markdown("FastAPI endpoint `/api/detect` is actively listening for requests from your Vercel frontend.")
+    gr.Markdown("FastAPI endpoint `/api/detect` is listening for requests from your Vercel frontend.")
     with gr.Row():
         img_in = gr.Image(label="Test Input Image")
         img_out = gr.Image(label="Detection Output")
