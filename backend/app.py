@@ -10,6 +10,11 @@ from PIL import Image, ImageDraw, ImageFont
 import torch
 from transformers import DetrImageProcessor, DetrForObjectDetection
 import gradio as gr
+try:
+    import spaces
+    HAS_SPACES = True
+except ImportError:
+    HAS_SPACES = False
 
 # 1. Initialize FastAPI
 fastapi_app = FastAPI(title="VisionTracker API")
@@ -64,6 +69,22 @@ class DetectionResponse(BaseModel):
     annotated_image_base64: str
     inference_time_ms: float
 
+# Internal inference function
+def run_model_inference(image, threshold):
+    img_width, img_height = image.size
+    inputs = processor(images=image, return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    target_sizes = torch.tensor([[img_height, img_width]]).to(device)
+    return processor.post_process_object_detection(
+        outputs, target_sizes=target_sizes, threshold=threshold
+    )[0]
+
+# Decorate with @spaces.GPU if running inside Hugging Face ZeroGPU Space
+if HAS_SPACES:
+    run_model_inference = spaces.GPU(run_model_inference)
+
 @fastapi_app.get("/api/health")
 def health_check():
     return {"status": "online", "device": device, "model": MODEL_NAME}
@@ -83,14 +104,7 @@ async def detect_objects(
     img_width, img_height = image.size
 
     try:
-        inputs = processor(images=image, return_tensors="pt").to(device)
-        with torch.no_grad():
-            outputs = model(**inputs)
-
-        target_sizes = torch.tensor([[img_height, img_width]]).to(device)
-        results = processor.post_process_object_detection(
-            outputs, target_sizes=target_sizes, threshold=threshold
-        )[0]
+        results = run_model_inference(image, threshold)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
@@ -173,17 +187,12 @@ async def detect_objects(
         inference_time_ms=round((time.time() - start_time) * 1000, 2)
     )
 
-# 2. Gradio Interactive Interface (built-in testing & satisfying Gradio runner)
+# 2. Gradio Interactive Interface
 def gradio_detect(input_img, conf):
     if input_img is None:
         return None, "No image uploaded"
-    # Convert numpy to PIL
     pil_img = Image.fromarray(input_img)
-    w, h = pil_img.size
-    inputs = processor(images=pil_img, return_tensors="pt").to(device)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    results = processor.post_process_object_detection(outputs, target_sizes=torch.tensor([[h, w]]).to(device), threshold=conf)[0]
+    results = run_model_inference(pil_img, conf)
     
     annotated = pil_img.copy()
     draw = ImageDraw.Draw(annotated)
@@ -207,5 +216,4 @@ with gr.Blocks(title="VisionTracker AI API") as demo:
     btn = gr.Button("Run Test")
     btn.click(gradio_detect, inputs=[img_in, slider], outputs=[img_out, txt_out])
 
-# Mount Gradio onto FastAPI root
 app = gr.mount_gradio_app(fastapi_app, demo, path="/")
